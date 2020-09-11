@@ -25,6 +25,7 @@ const LoginPage = () => {
     try {
       const user = await Auth.signIn(txtEmail.value, txtPwd.value);
       console.log( user );
+      if ( user.hasOwnProperty('username') ) window.location.href = '/';
     } catch (err) {
       alert(err.message);
       console.log(err);

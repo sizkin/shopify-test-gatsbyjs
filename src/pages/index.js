@@ -6,8 +6,12 @@ import Amplify, { Auth } from 'aws-amplify'
 import Layout from "../components/layout"
 import SEO from "../components/seo"
 
+import awsconfig from '../../aws-exports';
+Amplify.configure(awsconfig);
+
 const IndexPage = ({ data }) => {
-  const [signedUser, setSignedUser] = useState({});  
+  const [signedUser, setSignedUser] = useState({});
+  const [cart, setCart] = useState({});
 
   useEffect(() => {
     Auth.currentAuthenticatedUser()
@@ -17,9 +21,22 @@ const IndexPage = ({ data }) => {
 
   const handleAddLineItem = (e) => {
     console.log(e.target.dataset.pid);
-    axios.post('https://ntt-game-testing.myshopify.com/api/2020-07/graphql', `{
-      mutation checkoutCreate($input: {variantId: ${e.target.dataset.pid}, quantity: 1}) {
-        checkoutCreate(input: $input) {
+    console.log(signedUser);
+    if ( signedUser.hasOwnProperty('username') ) {
+      const itemID = e.target.dataset.pid;
+      const handle = e.target.dataset.handle;
+      const qtyElm = document.querySelector(`#purchase-qty-${handle}`);
+      const { attributes } = signedUser;
+      const data = `mutation {
+        checkoutCreate(input: {
+          email: "${attributes.email}"
+          lineItems: [
+            {
+              quantity: ${qtyElm.value},
+              variantId: "${itemID}"
+            }
+          ]
+        }) {
           checkout {
             id
           }
@@ -29,25 +46,44 @@ const IndexPage = ({ data }) => {
             message
           }
         }
+      }`;
+      try {
+        axios({
+          method: 'POST',
+          url: `https://ntt-game-testing.myshopify.com/api/2020-07/graphql.json`,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/graphql',
+            'X-Shopify-Storefront-Access-Token': '4f1eff62fecd67a238098678b55d6bc5'
+          },
+          data: data
+        })
+        .then((res) => {
+          if ( res.data.hasOwnProperty('checkoutCreate') ) {
+            alert('Added cart');
+            setCart({
+              checkoutId: res.data.checkoutCreate.checkout.id,
+              user: signedUser
+            });
+          }
+        });
+      } catch (e) {
+        console.log(e);
       }
-    }`, {
-      'headers': {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS,POST,PUT',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-SDK-Variant, X-SDK-Variant-Source, X-SDK-Version, X-Shopify-Storefront-Access-Token, shopify-core-canary, Access-Control-Allow-Origin, Access-Control-Allow-Headers',
-        'Accept': 'application/json',
-        'Content-Type': 'application/graphql',
-        'X-Shopify-Storefront-Access-Token': '4f1eff62fecd67a238098678b55d6bc5'
-      }
-    });
+
+    } else {
+      alert('Invalid Request');
+    }
   }
 
  return (
     <Layout>
       <SEO title="Home" />
-      { signedUser.hasOwnProperty('username') === false ? 
-          <Link to="/register">Register</Link> : null
-      } 
+      { signedUser.hasOwnProperty('username') === false ?
+          <Link to="/register">Register</Link>
+            :
+          <Link to="/logout">Logout</Link>
+      }
       <h1>List Products from shopify</h1>
       <div>
         {data.allProducts.edges.map(({ node }) => (
@@ -55,7 +91,10 @@ const IndexPage = ({ data }) => {
             <h3>{node.title}</h3>
             <p>{node.description}</p>
             <span>{node.priceRange.minVariantPrice.currencyCode} {node.priceRange.minVariantPrice.amount}</span>
-            <button id="checkout-{node.handle}" data-pid={node.shopifyId} onClick={handleAddLineItem}>Add cart</button>
+            <br />
+            Qty. <input type="number" min="1" max="99" id="purchase-qty-{node.handle}" />
+            <br />
+            <button id="checkout-{node.handle}" data-handle={node.handle} data-pid={node.variants[0].shopifyId} onClick={handleAddLineItem}>Add cart</button>
           </div>
         ))}
       </div>
@@ -84,6 +123,9 @@ export const query = graphql`
             amount
             currencyCode
           }
+        }
+        variants {
+          shopifyId
         }
       }
     }
